@@ -24,7 +24,8 @@ import sys
 def headers_to_go_style(headers):
     retval = {}
     for k, v in headers.items():
-        retval[k] = [str(v)]
+        if type(v) is bytes:
+            retval[k] = [v.decode('utf-8')]
     return retval
 
 def generate_vault_request(awsIamServerId):
