@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+set -x
 # SIGN_REQUEST_FILE_URL="https://raw.githubusercontent.com/hashicorp/terraform-aws-vault/master/examples/vault-consul-ami/auth/sign-request.py"
 SIGN_REQUEST_FILE_PATH="$basedir/lib/sign-request.py"
 # function download_request_signer_script() {

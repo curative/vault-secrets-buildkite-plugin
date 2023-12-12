@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -euox pipefail
 
 readonly default_image="vault"
 readonly default_tag="1.10.2"
