@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 
-SIGN_REQUEST_FILE_URL="https://raw.githubusercontent.com/hashicorp/terraform-aws-vault/master/examples/vault-consul-ami/auth/sign-request.py"
-SIGN_REQUEST_FILE_PATH="/tmp/sign_requests.py"
-function download_request_signer_script() {
-  if [ ! -f "${SIGN_REQUEST_FILE_PATH}" ]; then
-    echo "--- downloading sign_requests.py from ${SIGN_REQUEST_FILE_URL}"
-    curl -sL -o $SIGN_REQUEST_FILE_PATH $SIGN_REQUEST_FILE_URL
-  fi
-}
+# SIGN_REQUEST_FILE_URL="https://raw.githubusercontent.com/hashicorp/terraform-aws-vault/master/examples/vault-consul-ami/auth/sign-request.py"
+SIGN_REQUEST_FILE_PATH="$basedir/lib/sign-request.py"
+# function download_request_signer_script() {
+#   if [ ! -f "${SIGN_REQUEST_FILE_PATH}" ]; then
+#     echo "--- downloading sign_requests.py from ${SIGN_REQUEST_FILE_URL}"
+#     curl -sL -o $SIGN_REQUEST_FILE_PATH $SIGN_REQUEST_FILE_URL
+#   fi
+# }
 
 function vault_auth_aws() {
   # parse auth data
-  download_request_signer_script
+  # download_request_signer_script
   auth_url="${VAULT_ADDR}/v1/auth"
   if [ -n "${BUILDKITE_PLUGIN_VAULT_SECRETS_AUTH_PATH:-"aws"}" ]; then
     auth_url="${auth_url}/${BUILDKITE_PLUGIN_VAULT_SECRETS_AUTH_PATH:-"aws"}/login"
