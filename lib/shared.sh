@@ -68,7 +68,7 @@ function get_secret_value() {
     docker container logs "${container_name}"
     exit 1
   fi
-  echo "${secrets}" | jq -r .data.data."${secretKey}"
+  echo "${secrets}" | jq -r .data.data."[\"${secretKey}\"]"
 }
 
 load_secret_into_env() {
