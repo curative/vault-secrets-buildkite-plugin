@@ -31,11 +31,18 @@ cat > "${work}/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >> "${STUB_ARGV_LOG}"
 if [ "${1:-}" = "run" ]; then
+  # Only docker's own options count, so scan up to the `--` before the image
+  # and require that `--` to be there.
   pair="pair-missing"
+  saw_pair=""
   prev=""
   for arg in "$@"; do
+    if [ "${arg}" = "--" ]; then
+      [ -n "${saw_pair}" ] && pair="pair-ok"
+      break
+    fi
     if [ "${prev}" = "--env" ] && [ "${arg}" = "VAULT_TOKEN" ]; then
-      pair="pair-ok"
+      saw_pair="yes"
     fi
     prev="${arg}"
   done
@@ -98,7 +105,13 @@ for token_source in plugin-option environment aws-auth; do
   : > "${work}/argv.log"
   : > "${work}/run.log"
   failures_before="${failures}"
-  if ! out="$(run_hook "${token_source}")"; then
+  # Not inside `if`: bash ignores `set -e` in a condition, even after the hook
+  # turns it on, so a failing command in the hook would go unnoticed.
+  set +e
+  out="$(run_hook "${token_source}")"
+  hook_status=$?
+  set -e
+  if [ "${hook_status}" -ne 0 ]; then
     fail "[${token_source}] the environment hook exited non-zero; last lines of its output:"
     tail -n 5 "${work}/hook.log"
     continue
@@ -106,6 +119,9 @@ for token_source in plugin-option environment aws-auth; do
 
   if grep -qF -- "${dummy_token}" "${work}/argv.log"; then
     fail "[${token_source}] the token value appears in a command's argv"
+  fi
+  if grep -qF -- "${dummy_token}" "${work}/hook.log"; then
+    fail "[${token_source}] the token value appears in the hook's output"
   fi
   # Two secrets, so two `docker run` calls, each needing both records.
   if [ "$(grep -cx "pair-ok" "${work}/run.log")" -ne 2 ] || grep -qx "pair-missing" "${work}/run.log"; then
