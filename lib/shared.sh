@@ -52,11 +52,12 @@ function get_secret_value() {
   local secrets;
   cleanup
   echo -e "\033[31m" >&2
-  # Pass VAULT_TOKEN by name only. The prefix assignment puts the token in
-  # docker's environment (whether or not it is exported), and `--env VAULT_TOKEN`
-  # with no value tells docker to copy it from there. The token never appears in
-  # docker's argv, so it stays out of `ps` output and logs.
-  secrets=$(VAULT_TOKEN="${VAULT_TOKEN}" docker run \
+  # Pass VAULT_TOKEN by name only: `--env VAULT_TOKEN` with no value tells
+  # docker to copy it from its own environment. The token never appears in
+  # docker's argv, so it stays out of `ps` output and logs (and out of `set -x`
+  # traces, which show only the name here).
+  export VAULT_TOKEN
+  secrets=$(docker run \
       --cap-add IPC_LOCK \
       --env VAULT_TOKEN \
       --name="${container_name}" \
