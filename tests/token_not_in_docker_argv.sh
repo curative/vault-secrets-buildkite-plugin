@@ -22,24 +22,51 @@ fail() {
   failures=$((failures + 1))
 }
 
-# Stub docker: record every argument on its own line, record whether VAULT_TOKEN
-# reached docker through the environment, and answer `vault kv get` with a fixed
-# KV v2 payload.
-mkdir -p "${work}/bin"
+# Stub docker: record every argument on its own line, record for each
+# `docker run` whether it got the `--env VAULT_TOKEN` pair and whether
+# VAULT_TOKEN reached docker through the environment, and answer `vault kv get`
+# with a fixed KV v2 payload.
+mkdir -p "${work}/bin" "${work}/aws-bin"
 cat > "${work}/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >> "${STUB_ARGV_LOG}"
 if [ "${1:-}" = "run" ]; then
+  pair="pair-missing"
+  prev=""
+  for arg in "$@"; do
+    if [ "${prev}" = "--env" ] && [ "${arg}" = "VAULT_TOKEN" ]; then
+      pair="pair-ok"
+    fi
+    prev="${arg}"
+  done
+  echo "${pair}" >> "${STUB_RUN_LOG}"
   if [ "${VAULT_TOKEN:-}" = "${EXPECTED_TOKEN}" ]; then
-    echo "env-token-present" >> "${STUB_ENV_LOG}"
+    echo "env-token-present" >> "${STUB_RUN_LOG}"
   else
-    echo "env-token-missing" >> "${STUB_ENV_LOG}"
+    echo "env-token-missing" >> "${STUB_RUN_LOG}"
   fi
   echo '{"data":{"data":{"foo":"stub-secret-value","with-dash":"stub-dash-value"}}}'
 fi
 exit 0
 STUB
-chmod +x "${work}/bin/docker"
+
+# Stubs for the AWS auth path (only on PATH for that case): pip3 and the
+# request signer do nothing useful, and curl answers the Vault login with the
+# dummy token, as Vault would.
+cat > "${work}/aws-bin/pip3" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+cat > "${work}/aws-bin/python3" <<'STUB'
+#!/usr/bin/env bash
+echo '{"iam_request_url":"dXJs","iam_request_body":"Ym9keQ==","iam_request_headers":"e30="}'
+STUB
+cat > "${work}/aws-bin/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "${STUB_ARGV_LOG}"
+printf '{"auth":{"client_token":"%s"}}\n' "${EXPECTED_TOKEN}"
+STUB
+chmod +x "${work}/bin/docker" "${work}/aws-bin/pip3" "${work}/aws-bin/python3" "${work}/aws-bin/curl"
 
 run_hook() {
   # Runs the environment hook in a subshell, the way the agent sources it, and
@@ -48,7 +75,7 @@ run_hook() {
   (
     export PATH="${work}/bin:${PATH}"
     export STUB_ARGV_LOG="${work}/argv.log"
-    export STUB_ENV_LOG="${work}/env.log"
+    export STUB_RUN_LOG="${work}/run.log"
     export EXPECTED_TOKEN="${dummy_token}"
     export BUILDKITE_JOB_ID="test-job"
     export VAULT_ADDR="http://vault.invalid:8200"
@@ -58,27 +85,34 @@ run_hook() {
     case "${token_source}" in
       plugin-option) export BUILDKITE_PLUGIN_VAULT_SECRETS_TOKEN="${dummy_token}" ;;
       environment) export VAULT_TOKEN="${dummy_token}" ;;
+      aws-auth) export PATH="${work}/aws-bin:${PATH}" ;;
     esac
     # shellcheck disable=SC1091
-    . "${repo_root}/hooks/environment" > /dev/null 2>&1
+    . "${repo_root}/hooks/environment" > "${work}/hook.log" 2>&1
     echo "MY_SECRET=${MY_SECRET:-}"
     echo "MY_DASH_SECRET=${MY_DASH_SECRET:-}"
   )
 }
 
-for token_source in plugin-option environment; do
+for token_source in plugin-option environment aws-auth; do
   : > "${work}/argv.log"
-  : > "${work}/env.log"
-  out="$(run_hook "${token_source}")"
+  : > "${work}/run.log"
+  failures_before="${failures}"
+  if ! out="$(run_hook "${token_source}")"; then
+    fail "[${token_source}] the environment hook exited non-zero; last lines of its output:"
+    tail -n 5 "${work}/hook.log"
+    continue
+  fi
 
   if grep -qF -- "${dummy_token}" "${work}/argv.log"; then
-    fail "[${token_source}] the token value appears in docker's argv"
+    fail "[${token_source}] the token value appears in a command's argv"
   fi
-  if ! grep -qxF -- "VAULT_TOKEN" "${work}/argv.log"; then
-    fail "[${token_source}] docker run is not given a bare 'VAULT_TOKEN' env name"
+  # Two secrets, so two `docker run` calls, each needing both records.
+  if [ "$(grep -cx "pair-ok" "${work}/run.log")" -ne 2 ] || grep -qx "pair-missing" "${work}/run.log"; then
+    fail "[${token_source}] not every docker run got a bare '--env VAULT_TOKEN'"
   fi
-  if [ "$(grep -c . "${work}/env.log")" -ne 2 ] || grep -q missing "${work}/env.log"; then
-    fail "[${token_source}] docker run did not get VAULT_TOKEN from its environment for every secret"
+  if [ "$(grep -cx "env-token-present" "${work}/run.log")" -ne 2 ] || grep -qx "env-token-missing" "${work}/run.log"; then
+    fail "[${token_source}] not every docker run got VAULT_TOKEN from its environment"
   fi
   if ! grep -qxF "MY_SECRET=stub-secret-value" <<< "${out}"; then
     fail "[${token_source}] MY_SECRET was not exported with the value from Vault"
@@ -86,7 +120,7 @@ for token_source in plugin-option environment; do
   if ! grep -qxF "MY_DASH_SECRET=stub-dash-value" <<< "${out}"; then
     fail "[${token_source}] MY_DASH_SECRET was not exported with the value from Vault"
   fi
-  if [ "${failures}" -eq 0 ]; then
+  if [ "${failures}" -eq "${failures_before}" ]; then
     echo "ok: [${token_source}] token kept out of docker argv and secrets loaded"
   fi
 done
