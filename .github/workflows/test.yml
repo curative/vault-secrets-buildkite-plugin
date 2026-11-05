@@ -1,0 +1,17 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  token-not-in-docker-argv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the Vault token never appears in docker's argv
+        run: ./tests/token_not_in_docker_argv.sh

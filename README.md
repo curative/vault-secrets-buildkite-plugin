@@ -49,6 +49,13 @@ vault kv put secrets/buildkite/test foo1=bar foo=bar
 BUILDKITE_PLUGIN_VAULT_ENV_SECRETS_ENV_FOO1=secrets/buildkite/test/foo1 BUILDKITE_PLUGIN_VAULT_ENV_SECRETS_ENV_FOO=secrets/buildkite/test/foo  BUILDKITE_JOB_ID=123 VAULT_TOKEN=$(cat ~/.vault-token) ./hooks/environment
 ```
 
+### Token handling check
+`tests/token_not_in_docker_argv.sh` runs the environment hook against a stub `docker` with a dummy token. It checks that the token is passed to `docker run` as a bare `--env VAULT_TOKEN` (copied from docker's environment) and never appears in docker's argv, where it would show up in `ps` output and logs. It needs only bash and jq, and runs in GitHub Actions on every pull request.
+
+```shell
+./tests/token_not_in_docker_argv.sh
+```
+
 ## TODO
 1. Add vault auth support
 
