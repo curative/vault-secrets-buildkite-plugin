@@ -80,6 +80,11 @@ run_hook() {
   # prints the secrets it exported.
   local token_source="$1"
   (
+    # Start from a clean slate, in case the test runs inside a job that already
+    # uses this plugin.
+    for var in "${!BUILDKITE_PLUGIN_VAULT_SECRETS_@}"; do
+      unset "${var}"
+    done
     export PATH="${work}/bin:${PATH}"
     export STUB_ARGV_LOG="${work}/argv.log"
     export STUB_RUN_LOG="${work}/run.log"
@@ -88,7 +93,7 @@ run_hook() {
     export VAULT_ADDR="http://vault.invalid:8200"
     export BUILDKITE_PLUGIN_VAULT_SECRETS_ENV_MY_SECRET="secret/test/foo"
     export BUILDKITE_PLUGIN_VAULT_SECRETS_ENV_MY_DASH_SECRET="secret/test/with-dash"
-    unset VAULT_TOKEN BUILDKITE_PLUGIN_VAULT_SECRETS_TOKEN
+    unset VAULT_TOKEN
     case "${token_source}" in
       plugin-option) export BUILDKITE_PLUGIN_VAULT_SECRETS_TOKEN="${dummy_token}" ;;
       environment) export VAULT_TOKEN="${dummy_token}" ;;
