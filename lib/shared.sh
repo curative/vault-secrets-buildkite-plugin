@@ -34,7 +34,11 @@ function vault_auth_aws() {
 }
 EOF
 )
-  response=$(curl --request POST --fail-with-body --data "$data" "$auth_url")
+  # Send the login request on stdin (`--data @-`): its signed headers carry the
+  # instance's AWS session token, and on curl's command line they would show up
+  # in `ps` output for as long as the login takes. printf is a shell builtin, so
+  # the request never reaches any command's argv.
+  response=$(printf '%s' "$data" | curl --request POST --fail-with-body --data @- "$auth_url")
   export VAULT_TOKEN=$(echo $response | jq -r .auth.client_token)
 }
 
@@ -42,25 +46,22 @@ function strip_quotes() {
   echo "${1}" | sed "s/^[[:blank:]]*//g;s/[[:blank:]]*$//g;s/[\"']//g"
 }
 
-cleanup() {
-    docker container rm --force "${container_name}" > /dev/null 2>&1
-}
-
 function get_secret_value() {
   local secretPath="$1"
   local secretKey="$2"
   local secrets;
-  cleanup
   echo -e "\033[31m" >&2
   # Pass VAULT_TOKEN by name only: `--env VAULT_TOKEN` with no value tells
   # docker to copy it from its own environment. The token never appears in
   # docker's argv, so it stays out of `ps` output and logs (and out of `set -x`
-  # traces, which show only the name here).
+  # traces, which show only the name here). `--rm` removes the container, and
+  # the token in its config, as soon as `vault kv get` exits; vault's errors
+  # still reach the job log through docker's stderr.
   export VAULT_TOKEN
   secrets=$(docker run \
+      --rm \
       --cap-add IPC_LOCK \
       --env VAULT_TOKEN \
-      --name="${container_name}" \
       -- \
       "${image}" \
       vault kv get \
@@ -70,7 +71,7 @@ function get_secret_value() {
   local result=$?
   echo -e "\033[0m" >&2
   if [[ $result -ne 0 ]]; then
-    docker container logs "${container_name}"
+    echo "--- :skull_and_crossbones: Could not read '${secretPath}' from Vault (see the error above)" >&2
     exit 1
   fi
   echo "${secrets}" | jq -r .data.data."[\"${secretKey}\"]"

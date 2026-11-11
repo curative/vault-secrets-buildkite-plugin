@@ -50,7 +50,7 @@ BUILDKITE_PLUGIN_VAULT_ENV_SECRETS_ENV_FOO1=secrets/buildkite/test/foo1 BUILDKIT
 ```
 
 ### Token handling check
-`tests/token_not_in_docker_argv.sh` runs the environment hook against a stub `docker` with a dummy token, for the `token` option, an inherited `VAULT_TOKEN` and the AWS auth path. It checks that the token is passed to `docker run` as a bare `--env VAULT_TOKEN` (copied from docker's environment) and never appears in docker's argv, where it would show up in `ps` output and logs. It needs only bash and jq, and runs in GitHub Actions on every pull request.
+`tests/token_not_in_docker_argv.sh` runs the environment hook against stub `docker` and `curl` commands with dummy values, for the `token` option, an inherited `VAULT_TOKEN` and the AWS auth path, each with and without `set -x`. It checks that the token is passed to `docker run` as a bare `--env VAULT_TOKEN` (copied from docker's environment), that every `docker run` uses `--rm` so no stopped container keeps the token in its config, and that the signed AWS login request reaches `curl` on stdin (`--data @-`). Neither the token nor the signed headers may appear in any command's argv, where they would show up in `ps` output and logs, or in the hook's output, even under `set -x`, and the hook must leave `set -x` as it found it. It needs only bash and jq, and runs in GitHub Actions on every pull request.
 
 ```shell
 ./tests/token_not_in_docker_argv.sh
