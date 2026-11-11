@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 
+# Don't trace this hook. It handles the Vault token, the signed AWS login
+# request and the secret values, and `set -x` would print every one of them.
+# Tracing comes back on at the end if the caller had it on.
+if [[ $- == *x* ]]; then
+  _vault_secrets_xtrace="on"
+  set +x
+else
+  _vault_secrets_xtrace=""
+fi
+
 set -euo pipefail
 
 readonly default_image="vault"
 readonly default_tag="1.10.2"
 readonly image="${BUILDKITE_PLUGIN_VAULT_SECRETS_IMAGE:-${default_image}}:${BUILDKITE_PLUGIN_VAULT_SECRETS_TAG:-${default_tag}}"
-readonly container_name="vault-secrets-env-plugin-${BUILDKITE_JOB_ID}"
 
 # Resolve Vault address
 ########################################################################
@@ -43,8 +52,6 @@ if [ -z "${VAULT_TOKEN:-}" ]; then
 fi
 
 # main logic
-trap cleanup EXIT INT QUIT
-
 # parse env items
 while IFS='=' read -r name _ ; do
   if [[ $name =~ ^(BUILDKITE_PLUGIN_VAULT_SECRETS_ENV_) ]] ; then
@@ -55,3 +62,8 @@ while IFS='=' read -r name _ ; do
     load_secret_into_env "${export_name}" "${secret_base_path}" "${secret_key}"
   fi
 done < <(env | sort)
+
+if [ -n "${_vault_secrets_xtrace}" ]; then
+  set -x
+fi
+unset _vault_secrets_xtrace
