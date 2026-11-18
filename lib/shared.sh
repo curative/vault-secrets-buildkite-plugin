@@ -25,10 +25,12 @@ function vault_auth_aws() {
   # boto3 already there and write nothing. Install unlocked when flock is
   # missing or the lock file can't be opened: the hook runs under set -e, so a
   # failed flock would stop the job, while an unlocked install only risks the
-  # race.
+  # race. flock opens the file read-only and creates it if missing, so the
+  # check does the same: create it if missing, then require read access.
   local pip_lock="${HOME:-}/.vault-secrets-buildkite-plugin-pip.lock"
   if [ -n "${HOME:-}" ] && command -v flock > /dev/null 2>&1 \
-    && { [ -r "${pip_lock}" ] || touch "${pip_lock}"; } 2> /dev/null; then
+    && { [ -e "${pip_lock}" ] || touch "${pip_lock}"; } 2> /dev/null \
+    && [ -r "${pip_lock}" ]; then
     flock "${pip_lock}" pip3 install boto3==1.33.12
   else
     pip3 install boto3==1.33.12
