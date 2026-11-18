@@ -19,7 +19,22 @@ function vault_auth_aws() {
   if [ -n "${BUILDKITE_PLUGIN_VAULT_SECRETS_AUTH_HEADER:-${VAULT_ADDR}}" ]; then
     VAULT_IAM_SERVER_HEADER=$(echo ${BUILDKITE_PLUGIN_VAULT_SECRETS_AUTH_HEADER:-${VAULT_ADDR}} | sed 's/.*:\/\///' | sed 's/:.*//' | sed 's/\/.*//')
   fi
-  pip3 install boto3==1.33.12
+  # Agents on one host share $HOME, so they share pip's user site-packages
+  # (~/.local). Two jobs installing into it at once delete each other's files
+  # mid-copy, so take a host-wide lock: one job installs and the rest find
+  # boto3 already there and write nothing. Install unlocked when flock is
+  # missing or the lock file can't be opened: the hook runs under set -e, so a
+  # failed flock would stop the job, while an unlocked install only risks the
+  # race. flock opens the file read-only and creates it if missing, so the
+  # check does the same: create it if missing, then require read access.
+  local pip_lock="${HOME:-}/.vault-secrets-buildkite-plugin-pip.lock"
+  if [ -n "${HOME:-}" ] && command -v flock > /dev/null 2>&1 \
+    && { [ -e "${pip_lock}" ] || touch "${pip_lock}"; } 2> /dev/null \
+    && [ -r "${pip_lock}" ]; then
+    flock "${pip_lock}" pip3 install boto3==1.33.12
+  else
+    pip3 install boto3==1.33.12
+  fi
   signed_request=$(python3 ${SIGN_REQUEST_FILE_PATH} ${VAULT_IAM_SERVER_HEADER})
   iam_request_url=$(echo $signed_request | jq -r .iam_request_url)
   iam_request_body=$(echo $signed_request | jq -r .iam_request_body)
