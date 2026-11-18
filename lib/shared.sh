@@ -22,9 +22,14 @@ function vault_auth_aws() {
   # Agents on one host share $HOME, so they share pip's user site-packages
   # (~/.local). Two jobs installing into it at once delete each other's files
   # mid-copy, so take a host-wide lock: one job installs and the rest find
-  # boto3 already there and write nothing. Without flock, install as before.
-  if command -v flock > /dev/null 2>&1 && [ -n "${HOME:-}" ]; then
-    flock "${HOME}/.vault-secrets-buildkite-plugin-pip.lock" pip3 install boto3==1.33.12
+  # boto3 already there and write nothing. Install unlocked when flock is
+  # missing or the lock file can't be opened: the hook runs under set -e, so a
+  # failed flock would stop the job, while an unlocked install only risks the
+  # race.
+  local pip_lock="${HOME:-}/.vault-secrets-buildkite-plugin-pip.lock"
+  if [ -n "${HOME:-}" ] && command -v flock > /dev/null 2>&1 \
+    && { [ -r "${pip_lock}" ] || touch "${pip_lock}"; } 2> /dev/null; then
+    flock "${pip_lock}" pip3 install boto3==1.33.12
   else
     pip3 install boto3==1.33.12
   fi
